@@ -199,7 +199,7 @@ def tools_schema_to_qwen_prompt(tools_schema, prompt_mode: str = "legacy"):
 
     return "\n".join(lines)
 
-def tool_message_to_qwen_text(tool_messages):
+def tool_message_to_qwen_text(tool_messages, result_mode: str = "legacy"):
     """
     将 role 为 'tool' 的消息列表转换为符合 Qwen chat_template 格式的字符串。
     支持单个或多个连续的 tool 消息。
@@ -216,7 +216,9 @@ def tool_message_to_qwen_text(tool_messages):
     if not tool_messages:
         return ""
 
-    # 构建每个 tool call 的 <tool_call> ... asdf ... asdf ...
+    # Build each tool result as either the legacy <tool_call> wrapper or a plain
+    # observation-style user message. The latter is a diagnostic probe for T3RL
+    # alignment; it intentionally keeps role=user in the wider AgentEvolver loop.
     tool_entries = []
     for msg in tool_messages:
         if msg.get("role") != "tool":
@@ -244,7 +246,14 @@ def tool_message_to_qwen_text(tool_messages):
             "name": name,
             "content": parsed_content
         }
-        tool_entries.append(f'<tool_call>\n{json.dumps(entry, ensure_ascii=False)}\n</tool_call>')
+        if result_mode == "plain_user":
+            if isinstance(parsed_content, str):
+                content_text = parsed_content
+            else:
+                content_text = json.dumps(parsed_content, ensure_ascii=False)
+            tool_entries.append(f"Tool result from {name}:\n{content_text}")
+        else:
+            tool_entries.append(f'<tool_call>\n{json.dumps(entry, ensure_ascii=False)}\n</tool_call>')
 
     # 合并所有 tool entry，用换行连接
     inner_text = "\n".join(tool_entries) + "\n"
@@ -423,7 +432,10 @@ class BfclEnv(BaseEnv):
             self.conversation_history.append(msg)
             if msg["role"] == "tool":
                 # FIXME 改成一次性传入所有tool messages
-                next_msg_content += tool_message_to_qwen_text(msg)
+                next_msg_content += tool_message_to_qwen_text(
+                    msg,
+                    result_mode=self.params.get("tool_result_mode", "legacy"),
+                )
             elif msg["role"] == "user":
                 next_msg_content = msg.get("content", "")
                 # FIXME: yunpeng 更新新的tool schema到user msg里

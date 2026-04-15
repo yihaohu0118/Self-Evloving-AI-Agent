@@ -1,7 +1,8 @@
-# Zero-shot BFCL strict-parser probe for isolating agent-loop differences.
+# Zero-shot BFCL T3RL-prompt plus plain tool-result probe.
 #
-# This config keeps the current AE prompt, but rejects malformed <tool_call>
-# blocks instead of silently treating them as a normal no-tool answer.
+# This config combines the T3RL-style text instruction with plain user-role
+# tool observations. It is still not native role=tool, but it removes the most
+# AE-specific tool-result wrapper.
 
 hydra:
   searchpath:
@@ -101,17 +102,17 @@ env_service:
   env_url: "http://127.0.0.1:8082"
   env_feedin_preference: code
   bfcl:
-    strict_tool_parser: true
-    tool_prompt_mode: legacy
-    tool_result_mode: legacy
+    strict_tool_parser: false
+    tool_prompt_mode: t3rl_text
+    tool_result_mode: plain_user
 
 trainer:
   n_gpus_per_node: 4
   nnodes: 1
   critic_warmup: 0
   logger: ["console"]
-  project_name: "bfcl_zeroshot_strict_parser"
-  experiment_name: "bfcl_zeroshot_strict_parser"
+  project_name: "bfcl_zeroshot_t3rl_prompt_plain_tool_result"
+  experiment_name: "bfcl_zeroshot_t3rl_prompt_plain_tool_result"
   save_freq: 0
   save_limit: 0
   test_freq: 1

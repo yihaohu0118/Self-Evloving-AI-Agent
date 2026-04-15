@@ -104,6 +104,7 @@ env_service:
   bfcl:
     strict_tool_parser: false
     tool_prompt_mode: legacy
+    tool_result_mode: legacy
 
 trainer:
   n_gpus_per_node: 4

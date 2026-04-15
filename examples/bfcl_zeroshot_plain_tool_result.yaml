@@ -1,7 +1,8 @@
-# Zero-shot BFCL strict-parser probe for isolating agent-loop differences.
+# Zero-shot BFCL plain tool-result probe for isolating agent-loop differences.
 #
-# This config keeps the current AE prompt, but rejects malformed <tool_call>
-# blocks instead of silently treating them as a normal no-tool answer.
+# This config keeps the current AE prompt/parser, but changes tool observations
+# from the legacy <tool_call>{"name", "content"}</tool_call> wrapper to plain
+# user-role observation text.
 
 hydra:
   searchpath:
@@ -101,17 +102,17 @@ env_service:
   env_url: "http://127.0.0.1:8082"
   env_feedin_preference: code
   bfcl:
-    strict_tool_parser: true
+    strict_tool_parser: false
     tool_prompt_mode: legacy
-    tool_result_mode: legacy
+    tool_result_mode: plain_user
 
 trainer:
   n_gpus_per_node: 4
   nnodes: 1
   critic_warmup: 0
   logger: ["console"]
-  project_name: "bfcl_zeroshot_strict_parser"
-  experiment_name: "bfcl_zeroshot_strict_parser"
+  project_name: "bfcl_zeroshot_plain_tool_result"
+  experiment_name: "bfcl_zeroshot_plain_tool_result"
   save_freq: 0
   save_limit: 0
   test_freq: 1
