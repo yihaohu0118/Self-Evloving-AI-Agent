@@ -395,12 +395,16 @@ class BfclEnv(BaseEnv):
         # content to toolcalls
         assistant_entry = parse_assistant_content_to_tool_calls(
             assistant_entry,
-            strict=bool(self.params.get("strict_tool_parser", False)),
+            strict=bool(self.params.get("strict_tool_parser", True)),
         )
         parse_error = assistant_entry.pop("_bfcl_parse_error", None)
 
         self.conversation_history.append(assistant_entry) ### change by czy0712
         if parse_error:
+            assistant_entry["_bfcl_rejected_tool_calls"] = assistant_entry.get(
+                "tool_calls", []
+            )
+            assistant_entry["tool_calls"] = []
             return StateMessage(
                 role="user",
                 content=f"[ERROR] Invalid tool call format: {parse_error}",
@@ -416,9 +420,18 @@ class BfclEnv(BaseEnv):
         # 2. 返回工具调用结果, {"messages": [{"role": "tool", "content": {<execution_results>}, 'tool_call_id': 'chatcmpl-tool-xxx'}]}
         #    <execution_results>: 正确执行时返回结果dict, e.g., {"travel_cost_list": [1140.0]}, 错误时返回error信息, e.g., {"error": "cd: temporary: No such directory. You cannot use path to change directory."}
         env_resp = self.env_handler.interact(
-            self.conversation_history, self.original_test_entry
+            self.conversation_history,
+            self.original_test_entry,
+            enforce_available_tools=bool(
+                self.params.get("enforce_available_tools", True)
+            ),
         )
         # print('env_resp in bfcl_env.py', env_resp)
+        if env_resp.get("invalid_tool_call"):
+            assistant_entry["_bfcl_rejected_tool_calls"] = assistant_entry.get(
+                "tool_calls", []
+            )
+            assistant_entry["tool_calls"] = []
 
         # 把环境消息写回历史并构建新 StateMessage
         # 共有部分: role=<Role.USER: 'user'> timestamp='2025-xxx' metadata={} tool_call_id=''

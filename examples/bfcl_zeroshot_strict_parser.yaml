@@ -102,6 +102,7 @@ env_service:
   env_feedin_preference: code
   bfcl:
     strict_tool_parser: true
+    enforce_available_tools: true
     tool_prompt_mode: legacy
     tool_result_mode: legacy
 

@@ -109,8 +109,9 @@ env_service:
   env_feedin_preference: code
   bfcl:
     strict_tool_parser: true
-    tool_prompt_mode: legacy
-    tool_result_mode: legacy
+    enforce_available_tools: true
+    tool_prompt_mode: t3rl_text
+    tool_result_mode: plain_user
 
 # ── Trainer ───────────────────────────────────────────────────────────────────
 trainer:

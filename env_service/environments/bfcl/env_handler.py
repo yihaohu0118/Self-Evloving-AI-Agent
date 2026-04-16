@@ -136,8 +136,14 @@ class EnvHandler:
             if "tool_calls" in messages[-1] and len(messages[-1]["tool_calls"]) > 0:
                 try:
                     tool_calls = messages[-1]["tool_calls"]
+                    available_function_names = None
+                    if kwargs.get("enforce_available_tools", True):
+                        available_function_names = self._available_function_names(
+                            test_entry
+                        )
                     decoded_calls = self._convert_tool_calls_to_execution_format(
-                        tool_calls
+                        tool_calls,
+                        available_function_names=available_function_names,
                     )
                     print(f"decoded_calls: {decoded_calls}")
                     # todo 实现decode_execute，返回prm
@@ -147,7 +153,8 @@ class EnvHandler:
                             f"is_empty_execute_response: {is_empty_execute_response(decoded_calls)}"
                         )
                         return self._create_error_response(
-                            "Invalid tool call format: empty decoded tool call list."
+                            "Invalid tool call format: empty decoded tool call list.",
+                            invalid_tool_call=True,
                         )
                     return self._handle_tool_calls(
                         tool_calls, decoded_calls, test_entry, current_turn
@@ -155,7 +162,8 @@ class EnvHandler:
                 except Exception as e:
                     warnings.warn(f"处理工具调用时发生错误: {str(e)}")
                     return self._create_error_response(
-                        f"Invalid tool call format: {str(e)}"
+                        f"Invalid tool call format: {str(e)}",
+                        invalid_tool_call=True,
                     )
             else:
                 return self._handle_user_turn(test_entry, current_turn)
@@ -285,8 +293,18 @@ class EnvHandler:
 
         return tools
 
+    def _available_function_names(self, test_entry: Dict[str, Any]) -> set[str]:
+        return {
+            name
+            for name in (_function_name(func) for func in test_entry.get("function", []))
+            if name
+        }
+
     def _convert_tool_calls_to_execution_format(
-        self, tool_calls: List[Dict[str, Any]]
+        self,
+        tool_calls: List[Dict[str, Any]],
+        *,
+        available_function_names: Optional[set[str]] = None,
     ) -> List[str]:
         """
         Convert OpenAI format tool calls to execution format.
@@ -304,6 +322,13 @@ class EnvHandler:
             function_name = function.get("name", "")
             if not function_name:
                 raise ValueError("Missing function name in tool call.")
+            if (
+                available_function_names is not None
+                and function_name not in available_function_names
+            ):
+                raise ValueError(
+                    f"Tool '{function_name}' is not available in the current tool list."
+                )
 
             arguments = function.get("arguments", "{}")
             if isinstance(arguments, str):
@@ -381,7 +406,9 @@ class EnvHandler:
         """
         return {"messages": [{"role": "env", "content": "[CONVERSATION_COMPLETED]"}]}
 
-    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
+    def _create_error_response(
+        self, error_message: str, *, invalid_tool_call: bool = False
+    ) -> Dict[str, Any]:
         """
         Create response for error conditions.
 
@@ -391,7 +418,12 @@ class EnvHandler:
         Returns:
             Response containing error message
         """
-        return {"messages": [{"role": "env", "content": f"[ERROR] {error_message}"}]}
+        response = {
+            "messages": [{"role": "env", "content": f"[ERROR] {error_message}"}]
+        }
+        if invalid_tool_call:
+            response["invalid_tool_call"] = True
+        return response
 
     def decode_execute(self, result):
         """
@@ -785,7 +817,11 @@ class EnvHandler:
                 current_msg = messages[i]
 
                 if current_msg["role"] == "assistant":
-                    if "tool_calls" in current_msg and current_msg["tool_calls"]:
+                    if (
+                        not current_msg.get("_bfcl_rejected_tool_calls")
+                        and "tool_calls" in current_msg
+                        and current_msg["tool_calls"]
+                    ):
                         for tool_call in current_msg["tool_calls"]:
                             formatted_call = self._format_single_tool_call_for_eval(
                                 tool_call
@@ -799,7 +835,8 @@ class EnvHandler:
                     continue
 
                 if current_msg["role"] == "env":
-                    break
+                    i += 1
+                    continue
 
                 i += 1
 
@@ -819,7 +856,12 @@ class EnvHandler:
         """
         for message in reversed(messages):
             if message["role"] == "assistant":
-                if "tool_calls" in message and message["tool_calls"]:
+                if message.get("_bfcl_rejected_tool_calls"):
+                    continue
+                if (
+                    "tool_calls" in message
+                    and message["tool_calls"]
+                ):
                     formatted_calls = []
                     for tool_call in message["tool_calls"]:
                         formatted_call = self._format_single_tool_call_for_eval(
