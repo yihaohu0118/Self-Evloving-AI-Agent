@@ -146,13 +146,17 @@ class EnvHandler:
                         warnings.warn(
                             f"is_empty_execute_response: {is_empty_execute_response(decoded_calls)}"
                         )
-                        return self._handle_user_turn(test_entry, current_turn)
+                        return self._create_error_response(
+                            "Invalid tool call format: empty decoded tool call list."
+                        )
                     return self._handle_tool_calls(
                         tool_calls, decoded_calls, test_entry, current_turn
                     )
                 except Exception as e:
                     warnings.warn(f"处理工具调用时发生错误: {str(e)}")
-                    return self._handle_user_turn(test_entry, current_turn)
+                    return self._create_error_response(
+                        f"Invalid tool call format: {str(e)}"
+                    )
             else:
                 return self._handle_user_turn(test_entry, current_turn)
 
@@ -298,19 +302,27 @@ class EnvHandler:
         for tool_call in tool_calls:
             function = tool_call.get("function", {})
             function_name = function.get("name", "")
+            if not function_name:
+                raise ValueError("Missing function name in tool call.")
 
-            try:
-                arguments = function.get("arguments", "{}")
-                if isinstance(arguments, str):
+            arguments = function.get("arguments", "{}")
+            if isinstance(arguments, str):
+                try:
                     args_dict = json.loads(arguments)
-                else:
-                    args_dict = arguments
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Tool '{function_name}' has invalid JSON arguments: {arguments}"
+                    ) from e
+            else:
+                args_dict = arguments
 
-                args_str = ", ".join([f"{k}={repr(v)}" for k, v in args_dict.items()])
-                execution_list.append(f"{function_name}({args_str})")
+            if not isinstance(args_dict, dict):
+                raise ValueError(
+                    f"Tool '{function_name}' arguments must be a JSON object."
+                )
 
-            except Exception as e:
-                execution_list.append(f"{function_name}()")
+            args_str = ", ".join([f"{k}={repr(v)}" for k, v in args_dict.items()])
+            execution_list.append(f"{function_name}({args_str})")
 
         return execution_list
 
@@ -821,7 +833,9 @@ class EnvHandler:
 
         return ""
 
-    def _format_single_tool_call_for_eval(self, tool_call: Dict[str, Any]) -> str:
+    def _format_single_tool_call_for_eval(
+        self, tool_call: Dict[str, Any]
+    ) -> Optional[str]:
         """
         Format a single tool call into string representation for evaluation.
 
@@ -833,6 +847,8 @@ class EnvHandler:
         """
         function = tool_call.get("function", {})
         function_name = function.get("name", "")
+        if not function_name:
+            return None
 
         try:
             arguments = function.get("arguments", "{}")
@@ -841,11 +857,14 @@ class EnvHandler:
             else:
                 args_dict = arguments
 
+            if not isinstance(args_dict, dict):
+                return None
+
             args_str = ", ".join([f"{k}={repr(v)}" for k, v in args_dict.items()])
             return f"{function_name}({args_str})"
 
         except Exception as e:
-            return f"{function_name}()"
+            return None
 
 
 def env_step(

@@ -106,6 +106,10 @@ env_service:
   env_type: "bfcl"
   env_url: "http://127.0.0.1:8082"
   env_feedin_preference: code
+  bfcl:
+    strict_tool_parser: true
+    tool_prompt_mode: legacy
+    tool_result_mode: legacy
 
 # ── Trainer ───────────────────────────────────────────────────────────────────
 trainer:
