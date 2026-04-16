@@ -2,6 +2,7 @@ import json
 import time
 import os
 import uuid
+import re
 from typing import Dict, List, Any, Optional, Union
 import warnings
 import tempfile
@@ -79,6 +80,21 @@ def _format_additional_function_prompt(function_docs: List[Dict[str, Any]]) -> s
             pass
 
     return f"{template}\n\nAdditional function schemas:\n{functions_json}"
+
+
+_TOOL_ERROR_RE = re.compile(
+    r"("
+    r"\[ERROR\]|"
+    r"Error during execution|"
+    r"Invalid tool call format|"
+    r"not available in the current tool list|"
+    r"path not allowed|"
+    r"Invalid character|"
+    r"No such file or directory|"
+    r"unexpected keyword argument"
+    r")",
+    re.IGNORECASE,
+)
 
 
 class EnvHandler:
@@ -538,6 +554,7 @@ class EnvHandler:
             result = {
                 "valid": True,
                 "accuracy": accuracy,
+                "official_accuracy": accuracy,
                 "total_count": total_count,
                 "correct_count": int(accuracy * total_count),
                 "test_category": category,
@@ -548,6 +565,22 @@ class EnvHandler:
                 "turn_count": conversation_result.get("turn_count", 0),
                 "completed": conversation_result.get("completed", False),
             }
+            diagnostics = self._diagnose_trajectory(
+                messages,
+                completed=conversation_result.get("completed", False),
+            )
+            clean_accuracy = accuracy if diagnostics["clean"] else 0.0
+            result.update(
+                {
+                    "clean_accuracy": clean_accuracy,
+                    "trajectory_clean": diagnostics["clean"],
+                    "trajectory_has_invalid_tool_call": diagnostics[
+                        "has_invalid_tool_call"
+                    ],
+                    "trajectory_has_tool_error": diagnostics["has_tool_error"],
+                    "trajectory_error_count": diagnostics["error_count"],
+                }
+            )
 
             return result
 
@@ -580,11 +613,86 @@ class EnvHandler:
             "valid": False,
             "error": error_message,
             "accuracy": 0.0,
+            "official_accuracy": 0.0,
+            "clean_accuracy": 0.0,
+            "trajectory_clean": False,
+            "trajectory_has_invalid_tool_call": True,
+            "trajectory_has_tool_error": False,
+            "trajectory_error_count": 1,
             "total_count": 1,
             "correct_count": 0,
             "test_id": test_id,
             "model_name": self.model_name,
         }
+
+    def _diagnose_trajectory(
+        self, messages: List[Dict[str, Any]], *, completed: bool
+    ) -> Dict[str, Any]:
+        """
+        Paper-safe trajectory diagnostics.
+
+        Official BFCL rewards eventual success after tool feedback. For stricter
+        reporting, we also track whether the trajectory contained malformed tool
+        calls or tool execution errors before it eventually recovered.
+        """
+        has_invalid_tool_call = False
+        has_tool_error = False
+        error_count = 0
+
+        for message in messages:
+            role = message.get("role")
+            if message.get("_bfcl_rejected_tool_calls"):
+                has_invalid_tool_call = True
+                error_count += 1
+
+            if role == "env" and _TOOL_ERROR_RE.search(str(message.get("content", ""))):
+                has_invalid_tool_call = True
+                error_count += 1
+
+            if role == "tool" and self._tool_result_has_error(message.get("content")):
+                has_tool_error = True
+                error_count += 1
+
+        clean = bool(completed) and not has_invalid_tool_call and not has_tool_error
+        return {
+            "clean": clean,
+            "has_invalid_tool_call": has_invalid_tool_call,
+            "has_tool_error": has_tool_error,
+            "error_count": error_count,
+        }
+
+    def _tool_result_has_error(self, content: Any) -> bool:
+        parsed_content = content
+        if isinstance(content, str):
+            stripped = content.strip()
+            if stripped.startswith(("{", "[")):
+                try:
+                    parsed_content = json.loads(stripped)
+                except Exception:
+                    parsed_content = content
+            elif _TOOL_ERROR_RE.search(stripped):
+                return True
+
+        if self._json_like_has_error(parsed_content):
+            return True
+
+        return _TOOL_ERROR_RE.search(str(parsed_content)) is not None
+
+    def _json_like_has_error(self, value: Any) -> bool:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key).lower()
+                if key_text == "error" and item:
+                    return True
+                if "error" in key_text and item not in (None, "", False, [], {}):
+                    return True
+                if self._json_like_has_error(item):
+                    return True
+        elif isinstance(value, list):
+            return any(self._json_like_has_error(item) for item in value)
+        elif isinstance(value, str):
+            return _TOOL_ERROR_RE.search(value) is not None
+        return False
 
     def _eval_relevance_test(
         self, handler, model_result_data, prompt_data, model_name, test_category

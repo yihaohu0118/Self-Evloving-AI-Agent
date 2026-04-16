@@ -147,7 +147,7 @@ def parse_assistant_content_to_tool_calls(
 
     return result
 
-def tools_schema_to_qwen_prompt(tools_schema, prompt_mode: str = "legacy"):
+def tools_schema_to_qwen_prompt(tools_schema, prompt_mode: str = "t3rl_text"):
     """
     将 tools_schema 转换为符合 Qwen 模型 chat_template 的工具描述 prompt。
 
@@ -199,7 +199,7 @@ def tools_schema_to_qwen_prompt(tools_schema, prompt_mode: str = "legacy"):
 
     return "\n".join(lines)
 
-def tool_message_to_qwen_text(tool_messages, result_mode: str = "legacy"):
+def tool_message_to_qwen_text(tool_messages, result_mode: str = "plain_user"):
     """
     将 role 为 'tool' 的消息列表转换为符合 Qwen chat_template 格式的字符串。
     支持单个或多个连续的 tool 消息。
@@ -330,7 +330,7 @@ class BfclEnv(BaseEnv):
         # system_prompt = system_prompt_template.format(functions=function_docs)
         tool_prompt = tools_schema_to_qwen_prompt(
             tools,
-            prompt_mode=self.params.get("tool_prompt_mode", "legacy"),
+            prompt_mode=self.params.get("tool_prompt_mode", "t3rl_text"),
         )
         return {
             # system_prompt + "\n\n" + first_query
@@ -447,7 +447,7 @@ class BfclEnv(BaseEnv):
                 # FIXME 改成一次性传入所有tool messages
                 next_msg_content += tool_message_to_qwen_text(
                     msg,
-                    result_mode=self.params.get("tool_result_mode", "legacy"),
+                    result_mode=self.params.get("tool_result_mode", "plain_user"),
                 )
             elif msg["role"] == "user":
                 next_msg_content = msg.get("content", "")
@@ -484,6 +484,13 @@ class BfclEnv(BaseEnv):
         }
         sparse = (params or {}).get("sparse", False)
         result = self.env_handler.evaluate(conv_result)
+        eval_policy = self.params.get("eval_policy", "clean")
+        if eval_policy == "clean":
+            result = {**result, "accuracy": result.get("clean_accuracy", 0.0)}
+        elif eval_policy != "official":
+            raise ValueError(
+                f"Unsupported BFCL eval_policy={eval_policy!r}; use 'clean' or 'official'."
+            )
         return result.get("accuracy", 0.0) if sparse else result
 
     def get_info(

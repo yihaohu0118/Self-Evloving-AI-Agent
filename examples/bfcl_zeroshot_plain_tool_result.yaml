@@ -106,6 +106,7 @@ env_service:
     enforce_available_tools: true
     tool_prompt_mode: legacy
     tool_result_mode: plain_user
+    eval_policy: clean
 
 trainer:
   n_gpus_per_node: 4
