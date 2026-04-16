@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import uuid
 from typing import Dict, List, Any, Optional, Union
 import warnings
 import tempfile
@@ -97,9 +98,15 @@ class EnvHandler:
             model_name: Name of the model to use. Defaults to "env_handler".
         """
         self.original_model_name = model_name
-        self.model_name = (
+        sanitized_model_name = (
             model_name.replace("/", "_").replace("-", "_").replace(".", "_")
         )
+        # BFCL's execute_multi_turn_func_call caches executable instances in
+        # module-level globals keyed by model_name and test_id. AgentEvolver can
+        # run the same BFCL task repeatedly and concurrently, so a stable model
+        # name leaks state across episodes. Give each EnvHandler its own
+        # execution namespace while keeping original_model_name for registry use.
+        self.model_name = f"{sanitized_model_name}_{uuid.uuid4().hex[:8]}"
         self.model_style = ModelStyle.OPENAI_COMPLETIONS
         self._answer_path = answer_path
         if not self._answer_path.exists():
@@ -473,7 +480,7 @@ class EnvHandler:
 
             category = test_id.rsplit("_", 1)[0] if "_" in test_id else test_id
 
-            model_name = self.model_name
+            model_name = f"{self.model_name}_score_{uuid.uuid4().hex[:8]}"
             # from bfcl_eval.model_handler.api_inference.qwq import QwenAPIHandler
             from bfcl_eval.model_handler.api_inference.qwen import QwenAPIHandler #### qwq->qwen
             
