@@ -139,6 +139,8 @@ Note
 temp.sh
 
 scripts/*
+!scripts/test/
+!scripts/test/run_bfcl_multiturn_eval.sh
 synthetic_data/*
 
 site
