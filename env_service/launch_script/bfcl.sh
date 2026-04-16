@@ -20,7 +20,7 @@ BFCL_ENV_DIR=${BFCL_ENV_DIR:-$DEFAULT_BFCL_ENV_DIR}
 
 export ENV_PATH="$BFCL_ENV_DIR"
 export BFCL_DATA_PATH="${BFCL_DATA_PATH:-$BFCL_ENV_DIR/bfcl_data/multi_turn_processed.jsonl}"
-export BFCL_SPLID_ID_PATH="${BFCL_SPLID_ID_PATH:-$BFCL_ENV_DIR/bfcl_data/multi_turn_envtuning_train200_split_ids.json}"
+export BFCL_SPLID_ID_PATH="${BFCL_SPLID_ID_PATH:-$BFCL_ENV_DIR/bfcl_data/multi_turn_envtuning_train200_test600_split_ids.json}"
 export BFCL_ANSWER_PATH="${BFCL_ANSWER_PATH:-$BFCL_ENV_DIR/bfcl_eval/possible_answer}"
 export BFCL_HOST="${BFCL_HOST:-127.0.0.1}"
 export BFCL_PORT="${BFCL_PORT:-8082}"
